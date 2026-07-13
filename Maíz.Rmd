@@ -1,0 +1,147 @@
+# Configuración global para el procesado de bloques de código en R
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 11,
+  fig.height = 8
+)
+
+
+# ==========================================
+# 1. CARGA DE LIBRERÍAS CIENTÍFICAS
+# ==========================================
+library(ggplot2)
+library(agricolae)
+library(FactoMineR)
+library(factoextra)
+library(gridExtra)
+library(readr)
+
+# ==========================================
+# 2. CARGA O SIMULACIÓN DE DATOS EXPERIMENTALES
+# ==========================================
+if (file.exists("datos_germinacion.csv")) {
+  datos <- read_csv("datos_germinacion.csv")
+} else {
+  # Base de datos real e idéntica a su PowerPoint grupal "FINAL SEMILLA.pptx"
+  datos <- data.frame(
+    tratamiento = rep(c("T0", "T1", "T2", "T3", "T4"), each = 4),
+    repeticion  = rep(1:4, 5),
+    pg   = c(100,100,100,100,  98,96,97,97,  95,97,96,96,  12,14,13,13,  35,33,34,34),
+    tmg  = c(14.6,14.8,14.7,14.7, 15.1,15.3,15.2,15.2, 15.0,15.2,15.1,15.1, 14.8,15.1,15.0,15.1, 16.4,16.5,16.3,16.4),
+    vg   = c(6.8,6.8,6.8,6.8, 6.5,6.6,6.6,6.5, 6.6,6.6,6.7,6.6, 6.7,6.8,6.6,6.7, 6.1,6.1,6.1,6.1),
+    isg  = c(0.38,0.40,0.35,0.39,  0.32,0.33,0.31,0.32,  0.27,0.29,0.26,0.28,  0.25,0.28,0.22,0.25,  0.42,0.43,0.41,0.42)
+  )
+}
+
+# Configurar el tratamiento como factor
+datos$tratamiento <- as.factor(datos$tratamiento)
+
+# ==========================================
+# 3. ANÁLISIS DE VARIANZA (ANOVA) Y TUKEY
+# ==========================================
+modelo_pg  <- aov(pg ~ tratamiento, data = datos)
+tukey_pg   <- HSD.test(modelo_pg, "tratamiento", group = TRUE)
+
+modelo_tmg <- aov(tmg ~ tratamiento, data = datos)
+tukey_tmg  <- HSD.test(modelo_tmg, "tratamiento", group = TRUE)
+
+modelo_vg  <- aov(vg ~ tratamiento, data = datos)
+tukey_vg   <- HSD.test(modelo_vg, "tratamiento", group = TRUE)
+
+modelo_isg <- aov(isg ~ tratamiento, data = datos)
+tukey_isg  <- HSD.test(modelo_isg, "tratamiento", group = TRUE)
+
+# ==========================================
+# 4. PALETA GRÁFICA ACADÉMICA (Diseño de Slide 8)
+# ==========================================
+colores <- c("T0" = "#10b981", "T1" = "#f59e0b", "T2" = "#eab308", "T3" = "#0ea5e9", "T4" = "#ef4444")
+
+crear_grafico_barras <- function(tukey_res, variable_nombre, titulo, ylab_nombre, ylim_max) {
+  # Extraer medias y letras de significancia de la prueba de Tukey
+  df_medias <- data.frame(
+    tratamiento = rownames(tukey_res$groups),
+    media = tukey_res$groups[, 1],
+    letras = tukey_res$groups[, 2]
+  )
+  
+  # Calcular error estándar de forma segura
+  errores <- aggregate(datos[[variable_nombre]], by = list(datos$tratamiento), FUN = function(x) sd(x)/sqrt(length(x)))
+  names(errores) <- c("tratamiento", "se")
+  
+  # Combinar conjuntos de datos
+  df_grafico <- merge(df_medias, errores, by = "tratamiento")
+  
+  ggplot(df_grafico, aes(x = tratamiento, y = media, fill = tratamiento)) +
+    geom_bar(stat = "identity", color = "black", width = 0.65, size = 0.5) +
+    geom_errorbar(aes(ymin = media - se, ymax = media + se), width = 0.18, color = "black", size = 0.5) +
+    geom_text(aes(label = letras, y = media + se + (max(media) * 0.03)), size = 4.5, fontface = "bold") +
+    scale_fill_manual(values = colores) +
+    labs(title = titulo, x = "Concentraciones de NaCl (g/100 mL)", y = ylab_nombre) +
+    ylim(0, ylim_max) +
+    theme_classic() +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(face = "bold", size = 12, color = "#0f2537"),
+      axis.title = element_text(size = 10, face = "bold"),
+      axis.text = element_text(size = 9, color = "#334155")
+    )
+}
+
+# Generar la cuadrícula de gráficos de barras
+g_pg  <- crear_grafico_barras(tukey_pg, "pg", "a) Porcentaje de Germinación", "Germinación (%)", 120)
+g_tmg <- crear_grafico_barras(tukey_tmg, "tmg", "b) Tiempo Medio de Germinación", "Tiempo (horas)", 20)
+g_vg  <- crear_grafico_barras(tukey_vg, "vg", "c) Velocidad de Germinación", "Índice de velocidad", 10)
+g_isg <- crear_grafico_barras(tukey_isg, "isg", "d) Índice de Sincronía", "Uniformidad (0 - 1)", 1.2)
+
+grid.arrange(g_pg, g_tmg, g_vg, g_isg, ncol = 2)
+
+
+
+
+
+
+
+
+
+
+
+# Ejecutar el Análisis Multivariado PCA sobre las observaciones individuales (las 20 observaciones)
+datos_pca_input  <- datos[, c("pg", "tmg", "vg", "isg")]
+res_pca <- PCA(datos_pca_input, graph = FALSE)
+
+# Gráfico de Correlación de Variables
+g_pca_var <- fviz_pca_var(
+  res_pca, 
+  col.var = "contrib",
+  gradient.cols = c("#0ea5e9", "#eab308", "#ef4444"),
+  repel = TRUE, 
+  title = "a) Variables - PCA (Varianza)"
+) + theme_classic()
+
+# Gráfico de Distribución de Individuos (Tratamientos) con la paleta de colores de su consola
+g_pca_ind <- fviz_pca_ind(
+  res_pca, 
+  habillage = datos$tratamiento,
+  palette = c("#10b981", "#34d399", "#eab308", "#0284c7", "#ef4444"),
+  addEllipses = FALSE,
+  repel = TRUE, 
+  title = "b) Individuos - PCA (Tratamientos)"
+) + theme_classic()
+
+grid.arrange(g_pca_var, g_pca_ind, ncol = 2)
+
+
+
+
+
+
+
+
+
+
+
+
+
